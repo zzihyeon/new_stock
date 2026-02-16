@@ -1,26 +1,188 @@
-@import "tailwindcss";
-
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #07111f;
+  --panel: #0c1930;
+  --line: #213552;
+  --foreground: #e8f0ff;
+  --muted: #9ab0cf;
+  --accent: #2f81f7;
+  --up: #22c55e;
+  --down: #f87171;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  margin: 0;
+  padding: 0;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+.container {
+  width: min(1140px, calc(100vw - 24px));
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+  padding: 20px 0 40px;
+}
+
+.hero {
+  border: 1px solid var(--line);
+  background: linear-gradient(120deg, #0f2140 0%, #0c1a31 70%);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.hero h1 {
+  margin: 0 0 8px;
+}
+
+.hero p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.heroActions {
+  margin-top: 12px;
+}
+
+.card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.toolbar,
+.gridForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+input,
+select,
+button {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #0b1730;
+  color: var(--foreground);
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+button {
+  cursor: pointer;
+  background: #1a2f4f;
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.chartHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.chartHeader span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chartSvg {
+  width: 100%;
+  border-radius: 10px;
+  background: #081427;
+}
+
+.axis {
+  stroke: #35527b;
+  stroke-width: 1;
+}
+
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.metrics {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.metrics div {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.metrics span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.up {
+  color: var(--up);
+}
+
+.down {
+  color: var(--down);
+}
+
+.danger {
+  background: #5e1f2a;
+}
+
+.mutedCell {
+  text-align: center;
+  color: var(--muted);
 }
