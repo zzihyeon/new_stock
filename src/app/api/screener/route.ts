@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
-import { prisma } from "@/lib/db";
 import { jsonWithBigInt } from "@/lib/http";
+import { CandleModel, StockModel } from "@/lib/models";
+import { connectMongo } from "@/lib/mongodb";
 
 const screenerSchema = z.object({
   minPrice: z.number().int().nonnegative().optional(),
@@ -16,7 +16,7 @@ type ScreenerRow = {
   symbol: string;
   name: string;
   close: number;
-  volume: bigint;
+  volume: number;
   open: number;
   changeRate: number;
   baseDate: string;
@@ -30,44 +30,60 @@ export async function POST(request: NextRequest) {
   }
 
   const filters = parsed.data;
-  const sql = Prisma.sql`
-    WITH latest AS (
-      SELECT c.symbol, MAX(c."baseDate") AS "baseDate"
-      FROM "Candle" c
-      WHERE c.timeframe = 'DAY'
-      GROUP BY c.symbol
-    )
-    SELECT s.symbol, s.name, c.close, c.open, c.volume, c."baseDate" AS "baseDate",
-      CASE WHEN c.open = 0 THEN 0
-      ELSE ROUND(((c.close - c.open)::numeric / c.open::numeric) * 100, 2) END AS "changeRate"
-    FROM latest l
-    JOIN "Candle" c ON c.symbol = l.symbol AND c."baseDate" = l."baseDate" AND c.timeframe = 'DAY'
-    JOIN "Stock" s ON s.symbol = c.symbol
-    WHERE 1 = 1
-    ${
-      typeof filters.minPrice === "number"
-        ? Prisma.sql`AND c.close >= ${filters.minPrice}`
-        : Prisma.empty
-    }
-    ${
-      typeof filters.maxPrice === "number"
-        ? Prisma.sql`AND c.close <= ${filters.maxPrice}`
-        : Prisma.empty
-    }
-    ${
-      typeof filters.minVolume === "number"
-        ? Prisma.sql`AND c.volume >= ${filters.minVolume}`
-        : Prisma.empty
-    }
-    ${
-      typeof filters.minChangeRate === "number"
-        ? Prisma.sql`AND ((CASE WHEN c.open = 0 THEN 0 ELSE ((c.close - c.open)::numeric / c.open::numeric) * 100 END) >= ${filters.minChangeRate})`
-        : Prisma.empty
-    }
-    ORDER BY c.volume DESC
-    LIMIT 100
-  `;
+  await connectMongo();
 
-  const rows = await prisma.$queryRaw<ScreenerRow[]>(sql);
-  return jsonWithBigInt({ count: rows.length, rows });
+  const latestBySymbol = await CandleModel.aggregate<{ symbol: string; maxDateTime: string }>([
+    { $match: { timeframe: "DAY" } },
+    {
+      $addFields: {
+        dateTimeKey: { $concat: ["$baseDate", "$baseTime"] },
+      },
+    },
+    { $sort: { dateTimeKey: -1 } },
+    { $group: { _id: "$symbol", maxDateTime: { $first: "$dateTimeKey" } } },
+    { $project: { _id: 0, symbol: "$_id", maxDateTime: 1 } },
+  ]);
+
+  const symbolSet = new Set(latestBySymbol.map((x) => x.symbol));
+  const candles = await CandleModel.find({
+    timeframe: "DAY",
+    symbol: { $in: Array.from(symbolSet) },
+  })
+    .sort({ baseDate: -1, baseTime: -1 })
+    .lean();
+
+  const stockDocs = await StockModel.find({ symbol: { $in: Array.from(symbolSet) } }).lean();
+  const stockNameMap = new Map(stockDocs.map((item) => [item.symbol, item.name]));
+  const latestMap = new Map(latestBySymbol.map((item) => [item.symbol, item.maxDateTime]));
+  const seen = new Set<string>();
+
+  const rows: ScreenerRow[] = [];
+  for (const c of candles) {
+    if (seen.has(c.symbol)) continue;
+    const key = `${c.baseDate}${c.baseTime}`;
+    if (latestMap.get(c.symbol) !== key) continue;
+    seen.add(c.symbol);
+    const changeRate = c.open === 0 ? 0 : Number((((c.close - c.open) / c.open) * 100).toFixed(2));
+    rows.push({
+      symbol: c.symbol,
+      name: stockNameMap.get(c.symbol) ?? c.symbol,
+      close: c.close,
+      open: c.open,
+      volume: c.volume,
+      changeRate,
+      baseDate: c.baseDate,
+    });
+  }
+
+  const filtered = rows
+    .filter((row) => (typeof filters.minPrice === "number" ? row.close >= filters.minPrice : true))
+    .filter((row) => (typeof filters.maxPrice === "number" ? row.close <= filters.maxPrice : true))
+    .filter((row) => (typeof filters.minVolume === "number" ? row.volume >= filters.minVolume : true))
+    .filter((row) =>
+      typeof filters.minChangeRate === "number" ? row.changeRate >= filters.minChangeRate : true,
+    )
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, 100);
+
+  return jsonWithBigInt({ count: filtered.length, rows: filtered });
 }

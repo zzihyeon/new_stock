@@ -1,10 +1,10 @@
-import { Timeframe } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { runSimpleSmaBacktest } from "@/lib/backtest";
-import { prisma } from "@/lib/db";
 import { jsonWithBigInt } from "@/lib/http";
+import { BacktestRunModel, CandleModel } from "@/lib/models";
+import { connectMongo } from "@/lib/mongodb";
 
 const requestSchema = z.object({
   symbol: z.string().min(6).max(12),
@@ -23,15 +23,15 @@ export async function POST(request: NextRequest) {
   }
 
   const input = parsed.data;
-  const candles = await prisma.candle.findMany({
-    where: {
-      symbol: input.symbol.toUpperCase(),
-      timeframe: Timeframe.DAY,
-      baseDate: { gte: input.fromDate, lte: input.toDate },
-    },
-    select: { baseDate: true, close: true },
-    orderBy: { baseDate: "asc" },
-  });
+  await connectMongo();
+  const candles = await CandleModel.find({
+    symbol: input.symbol.toUpperCase(),
+    timeframe: "DAY",
+    baseDate: { $gte: input.fromDate, $lte: input.toDate },
+  })
+    .select({ baseDate: 1, close: 1, _id: 0 })
+    .sort({ baseDate: 1 })
+    .lean();
 
   if (candles.length < input.longPeriod + 5) {
     return jsonWithBigInt(
@@ -47,21 +47,19 @@ export async function POST(request: NextRequest) {
     input.longPeriod,
   );
 
-  const saved = await prisma.backtestRun.create({
-    data: {
-      symbol: input.symbol.toUpperCase(),
-      timeframe: Timeframe.DAY,
-      fromDate: input.fromDate,
-      toDate: input.toDate,
-      ruleName: `SMA${input.shortPeriod}/${input.longPeriod}`,
-      initialCapital: input.initialCapital,
-      finalCapital: result.finalCapital,
-      totalReturnPct: result.totalReturnPct,
-      maxDrawdownPct: result.maxDrawdownPct,
-      trades: result.trades,
-      summary: result.equityCurve.slice(-60),
-    },
+  const saved = await BacktestRunModel.create({
+    symbol: input.symbol.toUpperCase(),
+    timeframe: "DAY",
+    fromDate: input.fromDate,
+    toDate: input.toDate,
+    ruleName: `SMA${input.shortPeriod}/${input.longPeriod}`,
+    initialCapital: input.initialCapital,
+    finalCapital: result.finalCapital,
+    totalReturnPct: result.totalReturnPct,
+    maxDrawdownPct: result.maxDrawdownPct,
+    trades: result.trades,
+    summary: result.equityCurve.slice(-60),
   });
 
-  return jsonWithBigInt({ runId: saved.id, result });
+  return jsonWithBigInt({ runId: saved._id.toString(), result });
 }

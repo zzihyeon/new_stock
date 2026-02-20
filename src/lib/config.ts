@@ -5,7 +5,8 @@ export const config = {
     env: env.NODE_ENV,
   },
   db: {
-    url: env.DATABASE_URL,
+    uri: env.MONGODB_URI,
+    dbName: env.MONGODB_DB_NAME,
   },
   kis: {
     baseUrl: env.KIS_BASE_URL,

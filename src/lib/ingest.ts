@@ -1,6 +1,5 @@
-import { Timeframe } from "@prisma/client";
-
-import { prisma } from "@/lib/db";
+import { CandleModel, StockModel, Timeframe } from "@/lib/models";
+import { connectMongo } from "@/lib/mongodb";
 import { fetchDailyCandles, fetchMinuteCandles } from "@/lib/kis/client";
 
 const DEFAULT_SYMBOLS = [
@@ -21,63 +20,49 @@ async function upsertCandles(
   timeframe: Timeframe,
   candles: Awaited<ReturnType<typeof fetchDailyCandles>>,
 ): Promise<number> {
+  await connectMongo();
   let written = 0;
   for (const candle of candles) {
     if (!candle.baseDate) {
       continue;
     }
-    await prisma.candle.upsert({
-      where: {
-        symbol_timeframe_baseDate_baseTime: {
-          symbol,
-          timeframe,
-          baseDate: candle.baseDate,
-          baseTime: candle.baseTime,
+    await CandleModel.updateOne(
+      { symbol, timeframe, baseDate: candle.baseDate, baseTime: candle.baseTime },
+      {
+        $set: {
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+          volume: Number(candle.volume),
+          tradeValue: candle.tradeValue ? Number(candle.tradeValue) : undefined,
         },
       },
-      update: {
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-        volume: candle.volume,
-        tradeValue: candle.tradeValue,
-      },
-      create: {
-        symbol,
-        timeframe,
-        baseDate: candle.baseDate,
-        baseTime: candle.baseTime,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-        volume: candle.volume,
-        tradeValue: candle.tradeValue,
-      },
-    });
+      { upsert: true },
+    );
     written += 1;
   }
   return written;
 }
 
 export async function runDefaultIngestion(): Promise<IngestSummary[]> {
+  await connectMongo();
   const summaries: IngestSummary[] = [];
 
   for (const item of DEFAULT_SYMBOLS) {
-    await prisma.stock.upsert({
-      where: { symbol: item.symbol },
-      update: { name: item.name, market: item.market },
-      create: { symbol: item.symbol, name: item.name, market: item.market },
-    });
+    await StockModel.updateOne(
+      { symbol: item.symbol },
+      { $set: { symbol: item.symbol, name: item.name, market: item.market } },
+      { upsert: true },
+    );
 
     const [dailyCandles, minuteCandles] = await Promise.all([
       fetchDailyCandles(item.symbol),
       fetchMinuteCandles(item.symbol),
     ]);
 
-    const daily = await upsertCandles(item.symbol, Timeframe.DAY, dailyCandles);
-    const minute = await upsertCandles(item.symbol, Timeframe.MINUTE, minuteCandles);
+    const daily = await upsertCandles(item.symbol, "DAY", dailyCandles);
+    const minute = await upsertCandles(item.symbol, "MINUTE", minuteCandles);
     summaries.push({ symbol: item.symbol, daily, minute });
   }
 

@@ -15,8 +15,8 @@
 ## Tech Stack
 
 - Next.js (App Router, TypeScript)
-- PostgreSQL
-- Prisma ORM
+- MongoDB Replica Set
+- Mongoose
 - Zod
 
 ## Setup
@@ -31,6 +31,7 @@ cp .env.example .env
 
 필수/권장 키:
 
+- `MONGODB_URI`, `MONGODB_DB_NAME`
 - `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT_NO`
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (텔레그램 알림 연동용)
 
@@ -40,14 +41,7 @@ cp .env.example .env
 npm install
 ```
 
-4. Prisma 클라이언트 생성 및 마이그레이션
-
-```bash
-npm run prisma:generate
-npm run prisma:migrate -- --name init
-```
-
-5. 개발 서버 실행
+4. 개발 서버 실행
 
 ```bash
 npm run dev
@@ -83,3 +77,77 @@ curl -X POST http://localhost:3000/api/screener \
 - KIS API TR ID/파라미터는 계정 권한 및 API 정책에 따라 조정이 필요할 수 있습니다.
 - 운영 배포 전 Node LTS(20+) 환경을 권장합니다.
 - 런타임 설정은 `src/lib/config.ts`에서 중앙 관리합니다.
+
+## Python Quant Screener
+
+요구한 규칙 기반 퀀트 스크리너는 `src/screener` 패키지로 구성되어 있습니다.
+
+- `auth.py`: `.env` 로드, KIS 인증/토큰 캐시
+- `kis_client.py`: KIS OpenAPI 호출, 레이트리밋 대응(throttle), HTTP 캐시
+- `market_data.py`: 심볼 시드 로드, 시총 필터 Universe 생성, 데이터셋 수집
+- `indicators.py`: MA/거래량/거래대금 퍼센타일/지지 체크
+- `screener.py`: 패턴 A(양음양), 패턴 B(200MA below), 재무 개선 판정
+- `report.py`: 콘솔 표, CSV 저장, 상위 5개 요약, 텔레그램 신규 편입 알림
+
+### Python 실행
+
+```bash
+python3 -m pip install -r requirements-screener.txt
+python3 -m src.screener --debug-symbols 005930 000660
+```
+
+주기 실행(예: 10분마다):
+
+```bash
+python3 -m src.screener --loop-minutes 10
+```
+
+하루 1회 실행(기본값):
+
+```bash
+python3 -m src.screener
+```
+
+Mongo 누적 데이터만 기반으로 분석 실행:
+
+```bash
+python3 -m src.screener --loop-minutes 0 --data-source mongo
+```
+
+동작 정책:
+- 매 실행 시 전체 심볼을 스캔하고 `data/universe_100b.txt`를 갱신합니다.
+- 스크리닝 결과가 0건이면 `reports/screen_*.csv` 파일을 생성하지 않습니다.
+- 일봉 OHLCV(`시가/고가/저가/종가/거래량/거래대금`)는 MongoDB `daily_ohlcv` 컬렉션에 누적 저장합니다.
+- 이후 차트는 KIS 재조회 없이 MongoDB 저장 데이터로 그릴 수 있습니다.
+
+전체 종목 파일(`data/symbols.txt`) 기준으로 돌리면서 조건 민감도 조정 예시:
+
+```bash
+python3 -m src.screener --d0-vol-multiple 1.4 --d1-drop-ratio 0.6 --batch-size 40
+```
+
+심볼 시드:
+- `data/symbols.txt` 또는 `data/symbols.csv(symbol 컬럼)` 사용
+- 전체 상장종목으로 갱신:
+
+```bash
+python -m src.screener.symbols_sync
+```
+
+텔레그램은 이전 결과 대비 **신규 편입 종목만** 알립니다.
+
+참고:
+- 시총 필터는 `hts_avls(억원)` 우선, 없으면 `종가*상장주식수`로 계산합니다.
+- 시총 캐시는 `.cache/market_caps.json`에 저장되어 반복 실행 속도를 개선합니다.
+
+## macOS 자동 실행 (월~금 16:00)
+
+```bash
+./scripts/install_launchd.sh
+```
+
+수동 1회 실행:
+
+```bash
+./scripts/run_daily_screening.sh
+```

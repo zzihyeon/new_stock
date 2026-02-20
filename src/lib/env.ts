@@ -5,7 +5,8 @@ const envSchema = z.object({
     .enum(["development", "test", "production"])
     .optional()
     .default("development"),
-  DATABASE_URL: z.string().optional().default(""),
+  MONGODB_URI: z.string().optional().default(""),
+  MONGODB_DB_NAME: z.string().optional().default("stock"),
   KIS_BASE_URL: z.string().url().default("https://openapi.koreainvestment.com:9443"),
   KIS_APP_KEY: z.string().optional().default(""),
   KIS_APP_SECRET: z.string().optional().default(""),
