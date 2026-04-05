@@ -31,12 +31,21 @@ def save_csv(rows: List[Dict], output_dir: str = "reports") -> Optional[Path]:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     out = Path(output_dir) / f"screen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     fields = [
+        "screen_mode",
         "symbol",
         "name",
         "pattern",
         "close",
         "latest_date",
         "latest_volume",
+        "market_cap",
+        "technical_score",
+        "dart_grade",
+        "dart_score",
+        "hiring_momentum_score",
+        "hiring_posting_count_7d",
+        "hiring_posting_count_30d",
+        "composite_score",
         "manual_review",
         "risk_flags",
         "details",

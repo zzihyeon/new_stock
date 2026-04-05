@@ -96,6 +96,17 @@ def _passes_recent_volume_filter(ohlcv: List[Dict], cfg: ScreenConfig) -> bool:
     return recent_max_volume >= cfg.min_recent_n_volume
 
 
+def _technical_score(pattern_hit: Dict, latest_volume: float) -> float:
+    support_reasons = pattern_hit.get("support_reasons", [])
+    support_score = len(support_reasons) * 1.5
+    drop_ratio = float(
+        pattern_hit.get("d1_drop_ratio", pattern_hit.get("drop_ratio", pattern_hit.get("score", 0.0)))
+    )
+    drop_score = max(drop_ratio, 0.0) * 4.0
+    volume_score = min(float(latest_volume), 50_000_000.0) / 10_000_000.0
+    return round(support_score + drop_score + volume_score, 4)
+
+
 def evaluate_pattern_a(ohlcv: List[Dict], indicators: Dict, cfg: ScreenConfig) -> Optional[Dict]:
     """
     Pattern A (양음양):
@@ -239,6 +250,7 @@ def run_screening(dataset: Dict[str, Dict], cfg: ScreenConfig, debug_symbols: Op
             "latest_date": latest["date"],
             "latest_volume": latest.get("volume", 0),
             "pattern": (a_hit or b_hit)["pattern"],
+            "technical_score": _technical_score((a_hit or b_hit), latest.get("volume", 0)),
             "details": a_hit or b_hit,
             "risk_flags": risk_flags,
             "manual_review": len(risk_flags) > 0,
@@ -322,6 +334,7 @@ def run_relaxed_screening(
                     "latest_date": latest["date"],
                     "latest_volume": latest.get("volume", 0),
                     "pattern": "A_RELAXED",
+                    "technical_score": round(score, 4),
                     "details": {
                         "pattern": "A_RELAXED",
                         "d0_date": d0["date"],
@@ -346,4 +359,135 @@ def run_relaxed_screening(
     candidates.sort(key=lambda x: float(x["details"].get("score", 0.0)), reverse=True)
     need = max(target_count, 0)
     return candidates[:need]
+
+
+def _safe_ratio_pct(a: float, b: float) -> float:
+    if b <= 0:
+        return 0.0
+    return ((a - b) / b) * 100.0
+
+
+def _price_not_too_extended(ohlcv: List[Dict], indicators: Dict) -> tuple[bool, Dict]:
+    if len(ohlcv) < 30:
+        return False, {"reason": "INSUFFICIENT_OHLCV"}
+    close = float(ohlcv[-1]["close"])
+    ma60 = indicators["ma60"][-1]
+    ma200 = indicators["ma200"][-1]
+    ma20 = indicators["ma20"][-1]
+
+    ma60_proxy_used = False
+    if ma60 != ma60:  # NaN
+        if ma20 == ma20:
+            ma60 = ma20
+            ma60_proxy_used = True
+        else:
+            return False, {"reason": "MA_NOT_READY"}
+
+    below_ma200 = (ma200 == ma200) and (close < float(ma200))
+    within_ma60_plus20 = close <= float(ma60) * 1.20
+    pass_flag = below_ma200 or within_ma60_plus20
+    ma60_gap_pct = _safe_ratio_pct(close, float(ma60))
+    ma200_gap_pct = _safe_ratio_pct(close, float(ma200)) if ma200 == ma200 else 0.0
+    return pass_flag, {
+        "below_ma200": below_ma200,
+        "within_ma60_plus20": within_ma60_plus20,
+        "ma60_proxy_used": ma60_proxy_used,
+        "ma200_available": ma200 == ma200,
+        "ma60_gap_pct": round(ma60_gap_pct, 4),
+        "ma200_gap_pct": round(ma200_gap_pct, 4),
+    }
+
+
+def _operating_profit_trend_pass(financials: Dict, dart_feature: Optional[Dict] = None) -> tuple[bool, Dict]:
+    # Chosen "either annual or quarterly" interpretation:
+    # - annual proxy: op_income_growth > 0
+    # - recent/quarterly proxy: margin_change > 0
+    op_income_growth = float(financials.get("op_income_growth", 0.0))
+    margin_change = float(financials.get("margin_change", 0.0))
+    dart_feature = dart_feature or {}
+    # Fallback proxy from migrated DART score fields.
+    dart_annual_proxy = float(dart_feature.get("emp_yoy", 0.0))
+    dart_quarter_proxy = float(
+        dart_feature.get("q3_emp_yoy", dart_feature.get("q3_totpay_yoy", 0.0))
+    )
+
+    annual_ok = (op_income_growth > 0) or (dart_annual_proxy > 0)
+    quarterly_ok = (margin_change > 0) or (dart_quarter_proxy > 0)
+    return annual_ok or quarterly_ok, {
+        "annual_ok": annual_ok,
+        "quarterly_ok": quarterly_ok,
+        "op_income_growth": round(op_income_growth, 4),
+        "margin_change": round(margin_change, 4),
+        "dart_annual_proxy": round(dart_annual_proxy, 4),
+        "dart_quarter_proxy": round(dart_quarter_proxy, 4),
+    }
+
+
+def run_dart_score_screening(
+    dataset: Dict[str, Dict],
+    dart_features: Dict[str, Dict],
+    market_caps: Dict[str, int],
+    min_market_cap_won: int,
+    target_count: int,
+) -> List[Dict]:
+    out: List[Dict] = []
+    for symbol, payload in dataset.items():
+        ohlcv = payload.get("ohlcv", [])
+        financials = payload.get("financials", {})
+        if len(ohlcv) < 30:
+            continue
+
+        market_cap = int(market_caps.get(symbol, 0))
+        if market_cap < min_market_cap_won:
+            continue
+
+        indicators = compute_core_indicators(ohlcv)
+        not_extended, price_reason = _price_not_too_extended(ohlcv, indicators)
+        if not not_extended:
+            continue
+
+        dart = dart_features.get(symbol, {})
+        op_trend_ok, op_detail = _operating_profit_trend_pass(financials, dart_feature=dart)
+        if not op_trend_ok:
+            continue
+        dart_score = float(dart.get("score", 0.0))
+        dart_grade = str(dart.get("grade", "")).upper()
+        latest = ohlcv[-1]
+
+        result = {
+            "symbol": symbol,
+            "close": int(latest.get("close", 0)),
+            "latest_date": str(latest.get("date", "")),
+            "latest_volume": int(latest.get("volume", 0)),
+            "pattern": "DART_SCORE_VALUE",
+            "screen_mode": "dart-score",
+            "technical_score": 0.0,
+            "dart_grade": dart_grade,
+            "dart_score": round(dart_score, 4),
+            "hiring_momentum_score": 0.0,
+            "hiring_posting_count_7d": 0,
+            "hiring_posting_count_30d": 0,
+            "composite_score": round(dart_score, 4),
+            "market_cap": market_cap,
+            "manual_review": False,
+            "risk_flags": [],
+            "details": {
+                "market_cap": market_cap,
+                "price_filter": price_reason,
+                "op_trend": op_detail,
+                "dart_grade": dart_grade,
+                "dart_score": round(dart_score, 4),
+            },
+        }
+        out.append(result)
+
+    out.sort(
+        key=lambda row: (
+            float(row.get("dart_score", 0.0)),
+            float(row.get("composite_score", 0.0)),
+            int(row.get("market_cap", 0)),
+        ),
+        reverse=True,
+    )
+    return out[: max(target_count, 0)]
 

@@ -88,6 +88,8 @@ curl -X POST http://localhost:3000/api/screener \
 - `indicators.py`: MA/거래량/거래대금 퍼센타일/지지 체크
 - `screener.py`: 패턴 A(양음양), 패턴 B(200MA below), 재무 개선 판정
 - `report.py`: 콘솔 표, CSV 저장, 상위 5개 요약, 텔레그램 신규 편입 알림
+- `dart_migration.py`: `dart/dart_cache.sqlite(emp_cache)` -> Mongo raw/features 마이그레이션
+- `jobs_collector.py`: 사람인/잡코리아 채용 공고 수집 및 종목별 채용 모멘텀 집계
 
 ### Python 실행
 
@@ -114,11 +116,26 @@ Mongo 누적 데이터만 기반으로 분석 실행:
 python3 -m src.screener --loop-minutes 0 --data-source mongo
 ```
 
+DART SQLite 이관 + 채용 데이터 수집 + 결합 스코어 반영 실행:
+
+```bash
+python3 -m src.screener \
+  --loop-minutes 0 \
+  --data-source mongo \
+  --migrate-dart-sqlite-path "dart/dart_cache.sqlite" \
+  --collect-jobs \
+  --job-sources "saramin,jobkorea" \
+  --job-max-companies 120 \
+  --use-composite-score
+```
+
 동작 정책:
 - 매 실행 시 전체 심볼을 스캔하고 `data/universe_100b.txt`를 갱신합니다.
 - 스크리닝 결과가 0건이면 `reports/screen_*.csv` 파일을 생성하지 않습니다.
 - 일봉 OHLCV(`시가/고가/저가/종가/거래량/거래대금`)는 MongoDB `daily_ohlcv` 컬렉션에 누적 저장합니다.
 - 이후 차트는 KIS 재조회 없이 MongoDB 저장 데이터로 그릴 수 있습니다.
+- DART 원본은 `dart_emp_raw`, 정규화 지표는 `dart_emp_features`에 저장합니다.
+- 채용 공고 원본은 `job_postings`, 종목별 채용 모멘텀은 `job_features`에 저장합니다.
 
 전체 종목 파일(`data/symbols.txt`) 기준으로 돌리면서 조건 민감도 조정 예시:
 
@@ -140,7 +157,7 @@ python -m src.screener.symbols_sync
 - 시총 필터는 `hts_avls(억원)` 우선, 없으면 `종가*상장주식수`로 계산합니다.
 - 시총 캐시는 `.cache/market_caps.json`에 저장되어 반복 실행 속도를 개선합니다.
 
-## macOS 자동 실행 (월~금 16:00)
+## macOS 자동 실행 (장중/장마감/야간)
 
 ```bash
 ./scripts/install_launchd.sh
@@ -151,3 +168,8 @@ python -m src.screener.symbols_sync
 ```bash
 ./scripts/run_daily_screening.sh
 ```
+
+권장 운영 흐름:
+- `scripts/run_ingest_1600.sh`: 장마감 수집 + DART 이관 + 채용 수집(DB 업데이트 전용)
+- `scripts/run_watchlist_2000.sh`: 저장 데이터 기반 스크리닝 + 결합 스코어 + 텔레그램 full
+- `scripts/run_intraday_30m.sh`: 장중 30분 간격 신규 편입 체크 + 결합 스코어 + 텔레그램 new

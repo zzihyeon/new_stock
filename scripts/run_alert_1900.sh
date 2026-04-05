@@ -9,18 +9,30 @@ export PYTHONUNBUFFERED=1
 JOB_SOURCES="${JOB_SOURCES:-saramin,jobkorea}"
 JOB_MAX_COMPANIES="${JOB_MAX_COMPANIES:-120}"
 
-# 20:00 next-day watchlist from stored data
 python -m src.screener \
   --loop-minutes 0 \
   --data-source mongo \
+  --use-universe-file \
+  --screen-mode pattern \
   --collect-jobs \
   --job-sources "$JOB_SOURCES" \
   --job-max-companies "$JOB_MAX_COMPANIES" \
   --use-composite-score \
   --target-count 20 \
   --min-current-volume 1000000 \
-  --max-date-lag-days 0 \
+  --max-date-lag-days 1 \
+  --mongo-ohlcv-limit 500 \
   --telegram-mode full \
-  --telegram-title "[KIS Screener] Next-day Watchlist (20:00)" \
-  --state-path ".cache/nextday_watchlist_state.json"
+  --telegram-title "[KIS Screener] 다음날 관심종목 (19:00)"
 
+python -m src.screener \
+  --loop-minutes 0 \
+  --data-source mongo \
+  --use-universe-file \
+  --screen-mode dart-score \
+  --target-count 20 \
+  --min-market-cap 100000000000 \
+  --max-date-lag-days 1 \
+  --mongo-ohlcv-limit 500 \
+  --telegram-mode full \
+  --telegram-title "[KIS Screener] DART 스코어 종목 (19:00)"

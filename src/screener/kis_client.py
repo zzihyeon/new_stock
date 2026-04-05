@@ -113,42 +113,60 @@ class KISClient:
             self.cache.set(cache_key, payload)
         return payload
 
-    def get_daily_ohlcv(self, symbol: str, period_code: str = "D") -> List[dict]:
-        params = {
+    def get_daily_ohlcv(self, symbol: str, period_code: str = "D", days_back: int = 500) -> List[dict]:
+        from datetime import datetime, timedelta
+
+        today_str = datetime.now().strftime("%Y%m%d")
+        start_str = (datetime.now() - timedelta(days=days_back)).strftime("%Y%m%d")
+
+        base_params = {
             "FID_COND_MRKT_DIV_CODE": "J",
             "FID_INPUT_ISCD": symbol,
             "FID_PERIOD_DIV_CODE": period_code,
             "FID_ORG_ADJ_PRC": "0",
         }
 
-        payload = self._get(
-            INQUIRE_DAILY_ITEMCHART_API_URL,
-            INQUIRE_DAILY_ITEMCHART_TR_ID,
-            params,
-            use_cache=True,
-        )
-        rows = payload.get("output2") or payload.get("output1") or payload.get("output") or []
+        rows: list = []
 
-        # Some accounts return empty payload for itemchart endpoint.
-        # Fallback to daily-price endpoint for stable daily OHLCV.
-        if not rows:
+        try:
+            chart_params = {
+                **base_params,
+                "FID_INPUT_DATE_1": start_str,
+                "FID_INPUT_DATE_2": today_str,
+            }
             payload = self._get(
-                INQUIRE_DAILY_PRICE_API_URL,
-                INQUIRE_DAILY_PRICE_TR_ID,
-                params,
+                INQUIRE_DAILY_ITEMCHART_API_URL,
+                INQUIRE_DAILY_ITEMCHART_TR_ID,
+                chart_params,
                 use_cache=True,
             )
-            rows = payload.get("output") or []
+            rows = payload.get("output2") or payload.get("output1") or payload.get("output") or []
+        except Exception:
+            rows = []
 
-        # Last retry without cache for transient empty responses.
         if not rows:
-            payload = self._get(
-                INQUIRE_DAILY_PRICE_API_URL,
-                INQUIRE_DAILY_PRICE_TR_ID,
-                params,
-                use_cache=False,
-            )
-            rows = payload.get("output") or []
+            try:
+                payload = self._get(
+                    INQUIRE_DAILY_PRICE_API_URL,
+                    INQUIRE_DAILY_PRICE_TR_ID,
+                    base_params,
+                    use_cache=True,
+                )
+                rows = payload.get("output") or []
+            except Exception:
+                rows = []
+
+        if not rows:
+            try:
+                payload = self._get(
+                    INQUIRE_DAILY_PRICE_API_URL,
+                    INQUIRE_DAILY_PRICE_TR_ID,
+                    base_params,
+                    use_cache=False,
+                )
+                rows = payload.get("output") or []
+            except Exception:
+                rows = []
 
         normalized = [
             {
@@ -182,11 +200,22 @@ class KISClient:
         market_cap_from_shares = listed_shares * close_price if listed_shares > 0 and close_price > 0 else 0
         market_cap = market_cap_from_eok or market_cap_from_shares
 
+        open_p = _to_int(out.get("stck_oprc"))
+        high_p = _to_int(out.get("stck_hgpr"))
+        low_p = _to_int(out.get("stck_lwpr"))
+        tv = _to_int(out.get("acml_tr_pbmn"))
+        if tv <= 0 and close_price > 0:
+            tv = close_price * _to_int(out.get("acml_vol"))
+
         return {
             "symbol": symbol,
             "name": out.get("hts_kor_isnm", "").strip(),
+            "open": open_p,
+            "high": high_p,
+            "low": low_p,
             "close": close_price,
             "volume": _to_int(out.get("acml_vol")),
+            "trading_value": tv,
             "listed_shares": listed_shares,
             "market_cap_eok": market_cap_eok,
             "market_cap": market_cap,
