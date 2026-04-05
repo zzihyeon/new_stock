@@ -18,7 +18,7 @@ python -m src.screener \
   --job-sources "$JOB_SOURCES" \
   --job-max-companies "$JOB_MAX_COMPANIES" \
   --use-composite-score \
-  --target-count 20 \
+  --target-count 7 \
   --min-current-volume 1000000 \
   --max-date-lag-days 0 \
   --telegram-mode new \

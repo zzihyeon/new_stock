@@ -13,7 +13,7 @@ python -m src.screener \
   --use-universe-file \
   --screen-mode pattern \
   --use-composite-score \
-  --target-count 20 \
+  --target-count 7 \
   --min-current-volume 1000000 \
   --max-date-lag-days 1 \
   --mongo-ohlcv-limit 500 \

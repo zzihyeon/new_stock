@@ -116,7 +116,7 @@ def notify_new_inclusions(rows: List[Dict], bot_token: str, chat_id: str) -> Non
     if not rows:
         return
     lines = ["[KIS Screener] New inclusions detected"]
-    for row in rows[:10]:
+    for row in rows[:7]:
         lines.append(
             f"- {row['symbol']}({row.get('name', row['symbol'])}) | {row['pattern']} | close={row['close']} | date={row['latest_date']}"
         )
@@ -130,7 +130,7 @@ def notify_full_watchlist(rows: List[Dict], bot_token: str, chat_id: str, title:
     if not rows:
         lines.append("- 조건 충족 종목 없음")
     else:
-        for i, row in enumerate(rows[:20], start=1):
+        for i, row in enumerate(rows[:7], start=1):
             lines.append(
                 f"{i}) {row['symbol']}({row.get('name', row['symbol'])}) | {row['pattern']} | close={row['close']} | vol={row.get('latest_volume', 0)}"
             )

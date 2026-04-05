@@ -18,7 +18,7 @@ python -m src.screener \
   --job-sources "$JOB_SOURCES" \
   --job-max-companies "$JOB_MAX_COMPANIES" \
   --use-composite-score \
-  --target-count 20 \
+  --target-count 7 \
   --min-current-volume 1000000 \
   --max-date-lag-days 1 \
   --mongo-ohlcv-limit 500 \
@@ -30,9 +30,9 @@ python -m src.screener \
   --data-source mongo \
   --use-universe-file \
   --screen-mode dart-score \
-  --target-count 20 \
+  --target-count 7 \
   --min-market-cap 100000000000 \
   --max-date-lag-days 1 \
   --mongo-ohlcv-limit 500 \
   --telegram-mode full \
-  --telegram-title "[KIS Screener] DART 스코어 종목 (19:00)"
+  --telegram-title "[KIS Screener] DART 스코어 종목 (영업이익과 직원 수 증가 대비 주가 낮음) (19:00)"

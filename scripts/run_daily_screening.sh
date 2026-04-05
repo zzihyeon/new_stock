@@ -16,7 +16,7 @@ python -m src.screener \
   --job-max-companies 120 \
   --use-composite-score \
   --batch-size 60 \
-  --target-count 20 \
+  --target-count 7 \
   --min-current-volume 1000000 \
   --max-date-lag-days 0
 
@@ -28,7 +28,7 @@ python -m src.screener \
   --screen-mode pattern \
   --data-source mongo \
   --use-composite-score \
-  --target-count 20 \
+  --target-count 7 \
   --min-current-volume 1000000 \
   --max-date-lag-days 0 &
 pid_pattern=$!
@@ -37,7 +37,7 @@ python -m src.screener \
   --loop-minutes 0 \
   --screen-mode dart-score \
   --data-source mongo \
-  --target-count 20 \
+  --target-count 7 \
   --min-market-cap 100000000000 \
   --max-date-lag-days 0 &
 pid_dart=$!

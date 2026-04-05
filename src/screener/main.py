@@ -393,6 +393,8 @@ def run_once(args: argparse.Namespace) -> None:
             dart_weight=args.composite_dart_weight,
             hiring_weight=args.composite_hiring_weight,
         )
+        if args.target_count > 0:
+            results = results[: args.target_count]
     if args.collect_jobs:
         job_sources = [token.strip().lower() for token in _parse_csv_tokens(args.job_sources)]
         job_stats = collect_jobs_and_update_features(
@@ -500,7 +502,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--d0-tv-percentile-min", type=float, default=45.0)
     parser.add_argument("--d0-require-both", action="store_true", help="Require both vol surge and trading-value percentile surge")
     parser.add_argument("--pattern-a-pullback-days", type=int, default=6)
-    parser.add_argument("--target-count", type=int, default=20, help="Target number of screening results")
+    parser.add_argument("--target-count", type=int, default=7, help="Target number of screening results")
     parser.add_argument("--max-one-day-rise-pct", type=float, default=8.0)
     parser.add_argument("--max-three-day-rise-pct", type=float, default=15.0)
     parser.add_argument("--min-pullback-from-recent-high-pct", type=float, default=1.0)
